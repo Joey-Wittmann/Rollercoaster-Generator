@@ -1,0 +1,187 @@
+/*
+Program by Joey Wittmann and Zach Bishopp at RIT for a final scripting project in mel
+*/
+//Calculates width and length of track.
+//Window 1
+
+global proc firstWindow (){
+    if (`window -exists windowNum1`) deleteUI windowNum1;
+    string $myWindow1 = `window -title "Roller Coaster Generator" windowNum1`;
+    // define the layout of controls added 
+    // to the window.
+    columnLayout;
+    
+    // create some text
+        text -label ("Warning!" + "\n");
+        text -label ("We are not responsible for any damage that may occur to your computer." + "\n" + "All history WILL be deleted.");
+        text -label ("Click the Button if you are ready to procede" + "\n");
+        //checkbox
+           button -l "Continue?" -command "secondWindow; showWindow windowNum2; if (`window -exists windowNum1`) deleteUI windowNum1;";
+       
+   showWindow windowNum1;
+                           
+}
+
+//Window 2
+global proc secondWindow (){ 
+if (`window -exists windowNum2`) deleteUI windowNum2;
+    //Window 2
+string $myWindow2 = `window -title "Setting Custom Selections" windowNum2`;
+// define the layout of controls added 
+// to the window.
+columnLayout;
+            
+            text ("Select custom curve template then press Curve." + "\n" + "It appears that the maximum flow divisions is 1024, so make sure the arc length of your curve is below 500." + "\n" + "You can check this with a simple arclen command while selecting the curve.");
+            button -l "Curve" -command "string $myCurve[] = `ls -sl`;";
+            text ("Select custom column template then press Support.  It is important to note that the top of the support should rest on the Y axis after transformations have been frozen." + "\n");
+            button -l "Support" -command "string $myColumn[] = `ls -sl`;";
+            text ("Select custom track template then press Track." + "\n" + "The track should be open on both sides to enable smoothing. See the test file for an example.");
+            button -l "Track" -command "string $myTrack[] = `ls -sl`;";
+            text ("\n"+"\n"+"There is no going back.");
+            button -l "Finalize!" -command "if (`window -exists windowNum2`) deleteUI windowNum2; almostFinalClick($myTrack[0], $myCurve[0], $myColumn[0], 8);";
+   
+}
+
+firstWindow;
+global proc almostFinalClick(string $theTrack, string $theCurve, string $theColumn, float $spacing){
+    //implemented by user for extra precision
+    float $uStep = .01;
+    
+    //get name of object
+    select $theTrack;
+    
+    //dimensions variables
+    float $varSetup[] = `xform -query -worldSpace -translation ($theTrack + ".vtx[0]")`;
+    float $leftMost = $varSetup[0];
+    float $rightMost = $varSetup[0];
+    float $closest = $varSetup[2];
+    float $furthest = $varSetup[2];
+    float $length = 0;
+    float $width = 0;
+    
+    //evaluate number of verticies on object
+    int $vertnum[] = `polyEvaluate -v`;
+    
+    //Calcuates necessary bounds of track
+    for($i = 0; $i < $vertnum[0]; $i++){
+        float $locTrackVert[] = `xform -query -worldSpace -translation ($theTrack + ".vtx[" + $i + "]")`;
+        if($leftMost > $locTrackVert[0]){
+            $leftMost = $locTrackVert[0];
+        }
+        else if($rightMost < $locTrackVert[0]){
+            $rightMost = $locTrackVert[0];
+        }
+    }
+    for($i = 0; $i < $vertnum[0]; $i++){
+        float $locTrackVert[] = `xform -query -worldSpace -translation ($theTrack + ".vtx[" + $i + "]")`;
+        if($furthest > $locTrackVert[2]){
+            $furthest = $locTrackVert[2];
+        }
+        else if($closest < $locTrackVert[2]){
+            $closest = $locTrackVert[2];
+        }
+    }
+    
+    //finalizes $length and $width
+    $length = $rightMost - $leftMost;
+    $width = $closest - $furthest;
+    
+    //get name of object
+    select $theColumn;
+    
+    //dimensions variables
+    float $varSetup2[] = `xform -query -worldSpace -translation ($theColumn + ".vtx[0]")`;
+    float $top = $varSetup2[1];
+    float $bottom = $varSetup2[1];
+    float $height = 0;
+    
+    //evaluate number of verticies on object
+    int $vertnum[] = `polyEvaluate -v`;
+    
+     //Calcuates necessary bounds of column
+    for($i = 0; $i < $vertnum[0]; $i++){
+        float $locTrackVert[] = `xform -query -worldSpace -translation ($theColumn + ".vtx[" + $i + "]")`;
+        if($bottom > $locTrackVert[1]){
+            $bottom = $locTrackVert[1];
+        }
+        else if($top < $locTrackVert[1]){
+            $top = $locTrackVert[1];
+        }
+    }
+    
+    //finalizes $height
+    $height = $top - $bottom;
+    
+    //Flatten curve Variables for even spacing
+    float $maxU = `getAttr ( $theCurve + ".maxValue" )`;
+    float $mySpacing = $spacing;
+    string $arcLD = `arcLengthDimension ( $theCurve + ".u[0]" )`;
+    select ($theCurve);
+    string $theCurveFlat[] = `duplicate -rr`;
+    scale 1 0 1;
+    string $arcLD2 = `arcLengthDimension ( $theCurveFlat[0] + ".u[0]" )`;
+    float $arcLengthFlat = arclen ($theCurveFlat[0]);
+    
+    //Calculate x, y, and z values of supports by slowly usteping along it
+    for ($i = 0; $i < (100*$maxU); $i++){
+        float $uStep = $i * .01;
+        float $LDPos = `getAttr ($arcLD2 + ".arcLength")`;
+        if (($LDPos / $mySpacing) > 1){
+            float $YPos[] = `pointOnCurve -pr $uStep -p $theCurve`;
+            float $XZPos[] = `pointOnCurve -pr $uStep -p $theCurveFlat[0]`;
+            select $theColumn;
+            duplicate -rr;
+            move $XZPos[0] $YPos[1] $XZPos[2];
+            while ($YPos[1]>0){
+                $YPos[1] = $YPos[1] - $height;
+                duplicate -rr;
+                move -r 0 (-$height) 0;
+                scale -r 1.2 1 1.2;
+            }
+            $mySpacing += $spacing;
+        }       
+        setAttr ($arcLD2 + ".uParamValue") ($uStep);
+    }
+    select ($theColumn + "*");
+    polyUnite;
+    DeleteHistory;   
+    
+    
+    select $theCurve;
+    float $arcLength = `arclen`;
+    
+    //now make length of the curve
+    //the start of aligning the object to the curve
+    select $theTrack;
+    for ($k = 1; ($arcLength)/$k > $length; $k++){
+        duplicate -rr;
+        move -r ($length) 0 0;
+    }
+    select ($theTrack + "*");
+    polyUnite;
+    DeleteHistory;
+    rename $theTrack;
+    select -add $theCurve;
+    float $minTime = `playbackOptions -query -minTime`;
+    float $maxTime = `playbackOptions -query -maxTime`;
+    string $motionPath = `pathAnimation -fractionMode true -follow true -followAxis x -upAxis y -worldUpType "scene" -inverseUp false -inverseFront false -bank false -startTimeU $minTime -endTimeU $maxTime`;
+    string $latticeDelete[] = `flow -divisions (int($arcLength)*2) 2 2 -objectCentered 1 -localCompute 0 -localDivisions 2 2 2 ($theTrack)`;
+    //Disconnects flow at midpoint and makes it follows curve propperly
+    disconnectAttr ($motionPath + "_uValue.output") ($motionPath +".uValue");
+    setAttr ($motionPath + ".uValue") 0.5;
+    currentTime 1;
+    //finalizes position and erases all evidence
+    DeleteHistory;
+    select $latticeDelete[2];
+    doDelete;
+    select $theTrack;
+    CenterPivot;
+    xform -cpc;
+    CBdeleteConnection ($theTrack + ".rx");
+    CBdeleteConnection ($theTrack + ".ry");
+    CBdeleteConnection ($theTrack + ".rz");    
+    setAttr ($motionPath + ".uValue") 0;
+    select $theCurveFlat[0];
+    doDelete;
+    select -cl;
+}
